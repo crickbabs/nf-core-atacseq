@@ -1,4 +1,4 @@
-#id: 'mlib_deseq2_clustering'
+#id: 'mlib_clustering'
 #section_name: 'DESeq2: Sample similarity (merged library)'
 #description: "is generated from clustering by Euclidean distances between
 #	       <a href='https://bioconductor.org/packages/release/bioc/html/DESeq2.html' target='_blank'>DESeq2</a>
