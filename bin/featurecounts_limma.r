@@ -196,7 +196,7 @@ if (file.exists(ResultsFile) == FALSE) {
     raw.counts <- getCounts(dge)
     colnames(raw.counts) <- paste(colnames(raw.counts),'raw',sep='.')
     dge <- edgeR::calcNormFactors(dge)                                                ## WRITE THESE NORM FACTORS TO FILE INSTEAD OF DESEQ2 ONES
-    pseudo.counts <- t(t(raw.count) * dge$samples$norm.factors)
+    pseudo.counts <- t(t(raw.counts) * dge$samples$norm.factors)
     colnames(pseudo.counts) <- paste(colnames(pseudo.counts),'pseudo',sep='.')
     voom_design <- limma::model.matrix(~condition-1)
     voom_dge <- limma:voom(dge, voom_design, plot=FALSE)
@@ -257,9 +257,9 @@ if (file.exists(ResultsFile) == FALSE) {
                 write.table(pass.fdr.table[,c("Chr","Start","End","Geneid","log2FoldChange","Strand")], file=CompBEDFile, col.names=FALSE, row.names=FALSE, sep='\t', quote=FALSE)
 
                 ## MA PLOT & VOLCANO PLOT
-                #              DESeq2::plotMA(comp.results, main=paste("MA plot FDR <= ",MIN_FDR,sep=""), ylim=c(-2,2),alpha=MIN_FDR)
-                sig_status <- ifelse(comp.table$logFC>0, "Up", "Down")
-                sig_status[comp.table$adj.P.value > MIN_FDR > MIN_FDR] <- "null"
+                # DESeq2::plotMA(comp.results, main=paste("MA plot FDR <= ",MIN_FDR,sep=""), ylim=c(-2,2),alpha=MIN_FDR)
+                sig_status <- ifelse(comp.table$logFC > 0, "Up", "Down")
+                sig_status[comp.table$adj.P.value > MIN_FDR] <- "null"
                 limma::plotMD(dge, col=idx, status=sig_status)
 
                 ## ADD COUNTS TO LOGFILE

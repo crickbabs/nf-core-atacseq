@@ -1347,7 +1347,7 @@ process MergedLibConsensusPeakSetDiffAnalysis {
     script:
     prefix = "consensus_peaks.mLb.clN"
     bam_ext = params.single_end ? ".mLb.clN.sorted.bam" : ".mLb.clN.bam"
-    diff_analysis = params.limma_diff_analysis ? "deseq2" : "limma"
+    diff_analysis = params.limma_diff_analysis ? "limma": "deseq2"
     diff_script = params.limma_diff_analysis ? "featurecounts_limma.r" : "featurecounts_deseq2.r"
     vst = params.deseq2_vst ? "--vst TRUE" : ""
     """
@@ -1844,7 +1844,7 @@ process MergedRepConsensusPeakSetDiffAnalysis {
     script:
     prefix = "consensus_peaks.mRp.clN"
     bam_ext = params.single_end ? ".mLb.clN.sorted.bam" : ".mLb.clN.bam"
-    diff_analysis = params.limma_diff_analysis ? "deseq2" : "limma"
+    diff_analysis = params.limma_diff_analysis ? "limma" : "deseq2"
     diff_script = params.limma_diff_analysis ? "featurecounts_limma.r" : "featurecounts_deseq2.r"
     vst = params.deseq2_vst ? "--vst TRUE" : ""
     """
