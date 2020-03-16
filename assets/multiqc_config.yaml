@@ -101,13 +101,13 @@ report_section_order:
         order: -1400
     mrep_peak_annotation:
         order: -1500
-    mlib_deseq2_pca:
+    mlib_pca:
         order: -1600
-    mrep_deseq2_pca:
+    mrep_pca:
         order: -1700
-    mlib_deseq2_clustering:
+    mlib_clustering:
         order: -1800
-    mrep_deseq2_clustering:
+    mrep_clustering:
         order: -1900
     software_versions:
         order: -2000
