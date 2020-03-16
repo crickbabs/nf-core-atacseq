@@ -66,6 +66,7 @@ def helpMessage() {
 
     Differential analysis
       --deseq2_vst [bool]             Use vst transformation instead of rlog with DESeq2
+      --limma_diff_analysis [bool]    Uses faster limma voom implementation instead of DESeq2 for differential analysis
       --skip_diff_analysis [bool]     Skip differential accessibility analysis
 
     QC
@@ -156,14 +157,14 @@ if (params.single_end) {
 ch_mlib_peak_count_header = file("$baseDir/assets/multiqc/mlib_peak_count_header.txt", checkIfExists: true)
 ch_mlib_frip_score_header = file("$baseDir/assets/multiqc/mlib_frip_score_header.txt", checkIfExists: true)
 ch_mlib_peak_annotation_header = file("$baseDir/assets/multiqc/mlib_peak_annotation_header.txt", checkIfExists: true)
-ch_mlib_deseq2_pca_header = file("$baseDir/assets/multiqc/mlib_deseq2_pca_header.txt", checkIfExists: true)
-ch_mlib_deseq2_clustering_header = file("$baseDir/assets/multiqc/mlib_deseq2_clustering_header.txt", checkIfExists: true)
+ch_mlib_pca_header = file("$baseDir/assets/multiqc/mlib_pca_header.txt", checkIfExists: true)
+ch_mlib_clustering_header = file("$baseDir/assets/multiqc/mlib_clustering_header.txt", checkIfExists: true)
 
 ch_mrep_peak_count_header = file("$baseDir/assets/multiqc/mrep_peak_count_header.txt", checkIfExists: true)
 ch_mrep_frip_score_header = file("$baseDir/assets/multiqc/mrep_frip_score_header.txt", checkIfExists: true)
 ch_mrep_peak_annotation_header = file("$baseDir/assets/multiqc/mrep_peak_annotation_header.txt", checkIfExists: true)
-ch_mrep_deseq2_pca_header = file("$baseDir/assets/multiqc/mrep_deseq2_pca_header.txt", checkIfExists: true)
-ch_mrep_deseq2_clustering_header = file("$baseDir/assets/multiqc/mrep_deseq2_clustering_header.txt", checkIfExists: true)
+ch_mrep_pca_header = file("$baseDir/assets/multiqc/mrep_pca_header.txt", checkIfExists: true)
+ch_mrep_clustering_header = file("$baseDir/assets/multiqc/mrep_clustering_header.txt", checkIfExists: true)
 
 ////////////////////////////////////////////////////
 /* --          VALIDATE INPUTS                 -- */
@@ -260,6 +261,7 @@ if (params.save_macs_pileup)      summary['Save MACS2 Pileup'] = 'Yes'
 if (params.skip_merge_replicates) summary['Skip Merge Replicates'] = 'Yes'
 if (params.skip_consensus_peaks)  summary['Skip Consensus Peaks'] = 'Yes'
 if (params.deseq2_vst)            summary['Use DESeq2 vst Transform'] = 'Yes'
+if (params.limma_diff_analysis)   summary['Limma Voom Differential Analysis'] = 'Yes'
 if (params.skip_diff_analysis)    summary['Skip Differential Analysis'] = 'Yes'
 if (params.skip_fastqc)           summary['Skip FastQC'] = 'Yes'
 if (params.skip_picard_metrics)   summary['Skip Picard Metrics'] = 'Yes'
@@ -1316,11 +1318,11 @@ process MergedLibConsensusPeakSetCounts {
 }
 
 /*
- * STEP 6.7: Differential analysis with DESeq2
+ * STEP 6.7: Differential analysis with DESeq2/Limma Voom
  */
-process MergedLibConsensusPeakSetDESeq {
+process MergedLibConsensusPeakSetDiffAnalysis {
     label 'process_medium'
-    publishDir "${params.outdir}/bwa/mergedLibrary/macs/${PEAK_TYPE}/consensus/deseq2", mode: params.publish_dir_mode,
+    publishDir "${params.outdir}/bwa/mergedLibrary/macs/${PEAK_TYPE}/consensus/${diff_analysis}", mode: params.publish_dir_mode,
         saveAs: { filename ->
                       if (filename.endsWith(".igv.txt")) null
                       else filename
@@ -1331,23 +1333,25 @@ process MergedLibConsensusPeakSetDESeq {
 
     input:
     file counts from ch_mlib_macs_consensus_counts
-    file mlib_deseq2_pca_header from ch_mlib_deseq2_pca_header
-    file mlib_deseq2_clustering_header from ch_mlib_deseq2_clustering_header
+    file mlib_pca_header from ch_mlib_pca_header
+    file mlib_clustering_header from ch_mlib_clustering_header
 
     output:
-    file "*.{RData,results.txt,pdf,log}" into ch_mlib_macs_consensus_deseq_results
-    file "sizeFactors" into ch_mlib_macs_consensus_deseq_factors
-    file "*vs*/*.{pdf,txt}" into ch_mlib_macs_consensus_deseq_comp_results
-    file "*vs*/*.bed" into ch_mlib_macs_consensus_deseq_comp_bed
-    file "*igv.txt" into ch_mlib_macs_consensus_deseq_comp_igv
-    file "*.tsv" into ch_mlib_macs_consensus_deseq_mqc
+    file "*.{RData,results.txt,pdf,log}" into ch_mlib_macs_consensus_diff_results
+    file "sizeFactors" into ch_mlib_macs_consensus_diff_factors
+    file "*vs*/*.{pdf,txt}" into ch_mlib_macs_consensus_diff_comp_results
+    file "*vs*/*.bed" into ch_mlib_macs_consensus_diff_comp_bed
+    file "*igv.txt" into ch_mlib_macs_consensus_diff_comp_igv
+    file "*.tsv" into ch_mlib_macs_consensus_diff_mqc
 
     script:
     prefix = "consensus_peaks.mLb.clN"
     bam_ext = params.single_end ? ".mLb.clN.sorted.bam" : ".mLb.clN.bam"
+    diff_analysis = params.limma_diff_analysis ? "deseq2" : "limma"
+    diff_script = params.limma_diff_analysis ? "featurecounts_limma.r" : "featurecounts_deseq2.r"
     vst = params.deseq2_vst ? "--vst TRUE" : ""
     """
-    featurecounts_deseq2.r \\
+    $diff_script \\
         --featurecount_file $counts \\
         --bam_suffix '$bam_ext' \\
         --outdir ./ \\
@@ -1356,10 +1360,10 @@ process MergedLibConsensusPeakSetDESeq {
         --cores $task.cpus \\
         $vst \\
 
-    cat $mlib_deseq2_pca_header ${prefix}.pca.vals.txt > ${prefix}.pca.vals_mqc.tsv
-    cat $mlib_deseq2_clustering_header ${prefix}.sample.dists.txt > ${prefix}.sample.dists_mqc.tsv
+    cat $mlib_pca_header ${prefix}.pca.vals.txt > ${prefix}.pca.vals_mqc.tsv
+    cat $mlib_clustering_header ${prefix}.sample.dists.txt > ${prefix}.sample.dists_mqc.tsv
 
-    find * -type f -name "*.FDR0.05.results.bed" -exec echo -e "bwa/mergedLibrary/macs/${PEAK_TYPE}/consensus/deseq2/"{}"\\t255,0,0" \\; > ${prefix}.igv.txt
+    find * -type f -name "*.FDR0.05.results.bed" -exec echo -e "bwa/mergedLibrary/macs/${PEAK_TYPE}/consensus/${diff_analysis}/"{}"\\t255,0,0" \\; > ${prefix}.igv.txt
     """
 }
 
@@ -1811,11 +1815,11 @@ process MergedRepConsensusPeakSetCounts {
 }
 
 /*
- * STEP 8.8: Differential analysis with DESeq2
+ * STEP 8.8: Differential analysis with DESeq2/Limma Voom
  */
-process MergedRepConsensusPeakSetDESeq {
+process MergedRepConsensusPeakSetDiffAnalysis {
     label 'process_medium'
-    publishDir "${params.outdir}/bwa/mergedReplicate/macs/${PEAK_TYPE}/consensus/deseq2", mode: params.publish_dir_mode,
+    publishDir "${params.outdir}/bwa/mergedReplicate/macs/${PEAK_TYPE}/consensus/${diff_analysis}", mode: params.publish_dir_mode,
         saveAs: { filename ->
                       if (filename.endsWith(".igv.txt")) null
                       else filename
@@ -1826,23 +1830,25 @@ process MergedRepConsensusPeakSetDESeq {
 
     input:
     file counts from ch_mrep_macs_consensus_counts
-    file mrep_deseq2_pca_header from ch_mrep_deseq2_pca_header
-    file mrep_deseq2_clustering_header from ch_mrep_deseq2_clustering_header
+    file mrep_pca_header from ch_mrep_pca_header
+    file mrep_clustering_header from ch_mrep_clustering_header
 
     output:
-    file "*.{RData,results.txt,pdf,log}" into ch_mrep_macs_consensus_deseq_results
-    file "sizeFactors" into ch_mrep_macs_consensus_deseq_factors
-    file "*vs*/*.{pdf,txt}" into ch_mrep_macs_consensus_deseq_comp_results
-    file "*vs*/*.bed" into ch_mrep_macs_consensus_deseq_comp_bed
-    file "*igv.txt" into ch_mrep_macs_consensus_deseq_comp_igv
-    file "*.tsv" into ch_mrep_macs_consensus_deseq_mqc
+    file "*.{RData,results.txt,pdf,log}" into ch_mrep_macs_consensus_diff_results
+    file "sizeFactors" into ch_mrep_macs_consensus_diff_factors
+    file "*vs*/*.{pdf,txt}" into ch_mrep_macs_consensus_diff_comp_results
+    file "*vs*/*.bed" into ch_mrep_macs_consensus_diff_comp_bed
+    file "*igv.txt" into ch_mrep_macs_consensus_diff_comp_igv
+    file "*.tsv" into ch_mrep_macs_consensus_diff_mqc
 
     script:
     prefix = "consensus_peaks.mRp.clN"
     bam_ext = params.single_end ? ".mLb.clN.sorted.bam" : ".mLb.clN.bam"
+    diff_analysis = params.limma_diff_analysis ? "deseq2" : "limma"
+    diff_script = params.limma_diff_analysis ? "featurecounts_limma.r" : "featurecounts_deseq2.r"
     vst = params.deseq2_vst ? "--vst TRUE" : ""
     """
-    featurecounts_deseq2.r \\
+    $diff_script \\
         --featurecount_file $counts \\
         --bam_suffix '$bam_ext' \\
         --outdir ./ \\
@@ -1851,10 +1857,10 @@ process MergedRepConsensusPeakSetDESeq {
         --cores $task.cpus \\
         $vst
 
-    cat $mrep_deseq2_pca_header ${prefix}.pca.vals.txt > ${prefix}.pca.vals_mqc.tsv
-    cat $mrep_deseq2_clustering_header ${prefix}.sample.dists.txt > ${prefix}.sample.dists_mqc.tsv
+    cat $mrep_pca_header ${prefix}.pca.vals.txt > ${prefix}.pca.vals_mqc.tsv
+    cat $mrep_clustering_header ${prefix}.sample.dists.txt > ${prefix}.sample.dists_mqc.tsv
 
-    find * -type f -name "*.FDR0.05.results.bed" -exec echo -e "bwa/mergedReplicate/macs/${PEAK_TYPE}/consensus/deseq2/"{}"\\t255,0,0" \\; > ${prefix}.igv.txt
+    find * -type f -name "*.FDR0.05.results.bed" -exec echo -e "bwa/mergedReplicate/macs/${PEAK_TYPE}/consensus/${diff_analysis}/"{}"\\t255,0,0" \\; > ${prefix}.igv.txt
     """
 }
 
@@ -1881,12 +1887,12 @@ process IGV {
     file bigwigs from ch_mlib_bigwig_igv.collect().ifEmpty([])
     file peaks from ch_mlib_macs_igv.collect().ifEmpty([])
     file consensus_peaks from ch_mlib_macs_consensus_igv.collect().ifEmpty([])
-    file differential_peaks from ch_mlib_macs_consensus_deseq_comp_igv.collect().ifEmpty([])
+    file differential_peaks from ch_mlib_macs_consensus_diff_comp_igv.collect().ifEmpty([])
 
     file rbigwigs from ch_mrep_bigwig_igv.collect().ifEmpty([])
     file rpeaks from ch_mrep_macs_igv.collect().ifEmpty([])
     file rconsensus_peaks from ch_mrep_macs_consensus_igv.collect().ifEmpty([])
-    file rdifferential_peaks from ch_mrep_macs_consensus_deseq_comp_igv.collect().ifEmpty([])
+    file rdifferential_peaks from ch_mrep_macs_consensus_diff_comp_igv.collect().ifEmpty([])
 
     output:
     file "*.{txt,xml}" into ch_igv_session
@@ -1990,7 +1996,7 @@ process MultiQC {
     file ('macs/mergedLibrary/*') from ch_mlib_macs_mqc.collect().ifEmpty([])
     file ('macs/mergedLibrary/*') from ch_mlib_peak_qc_mqc.collect().ifEmpty([])
     file ('macs/mergedLibrary/consensus/*') from ch_mlib_macs_consensus_counts_mqc.collect().ifEmpty([])
-    file ('macs/mergedLibrary/consensus/*') from ch_mlib_macs_consensus_deseq_mqc.collect().ifEmpty([])
+    file ('macs/mergedLibrary/consensus/*') from ch_mlib_macs_consensus_diff_mqc.collect().ifEmpty([])
     file ('preseq/*') from ch_mlib_preseq_mqc.collect().ifEmpty([])
     file ('deeptools/*') from ch_mlib_plotprofile_mqc.collect().ifEmpty([])
     file ('deeptools/*') from ch_mlib_plotfingerprint_mqc.collect().ifEmpty([])
@@ -2001,7 +2007,7 @@ process MultiQC {
     file ('macs/mergedReplicate/*') from ch_mrep_macs_mqc.collect().ifEmpty([])
     file ('macs/mergedReplicate/*') from ch_mrep_peak_qc_mqc.collect().ifEmpty([])
     file ('macs/mergedReplicate/consensus/*') from ch_mrep_macs_consensus_counts_mqc.collect().ifEmpty([])
-    file ('macs/mergedReplicate/consensus/*') from ch_mrep_macs_consensus_deseq_mqc.collect().ifEmpty([])
+    file ('macs/mergedReplicate/consensus/*') from ch_mrep_macs_consensus_diff_mqc.collect().ifEmpty([])
 
     output:
     file "*multiqc_report.html" into ch_multiqc_report
